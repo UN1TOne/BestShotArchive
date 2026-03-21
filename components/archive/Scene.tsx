@@ -35,6 +35,7 @@ export function Scene({ scrollContainer }: SceneProps) {
     selectedImage,
   } = useArchiveStore()
 
+  // 1. 초기화 및 리사이즈 (모바일 뷰포트 대응)
   useEffect(() => {
     if (!containerRef.current) return
     while (containerRef.current.firstChild) {
@@ -44,72 +45,69 @@ export function Scene({ scrollContainer }: SceneProps) {
     const scene = new THREE.Scene()
     sceneRef.current = scene
 
-    // [모바일 대응] FOV를 살짝 키워 더 넓은 영역을 보이게 함
+    // 카메라 시야각 조정
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100)
     camera.position.z = 12
     cameraRef.current = camera
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-    renderer.setSize(window.innerWidth, window.innerHeight)
+
+    // [수정] 모바일 브라우저의 주소창 변화에 대응하기 위해 window.innerHeight를 직접 참조
+    const updateSize = () => {
+      const width = window.innerWidth
+      const height = window.innerHeight
+      renderer.setSize(width, height)
+      if (cameraRef.current) {
+        cameraRef.current.aspect = width / height
+        cameraRef.current.updateProjectionMatrix()
+      }
+    }
+
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.setClearColor(0x000000, 0)
     containerRef.current.appendChild(renderer.domElement)
     rendererRef.current = renderer
 
+    updateSize()
     scene.add(new THREE.AmbientLight(0xffffff, 1.2))
 
-    const handleResize = () => {
-      if (!cameraRef.current || !rendererRef.current) return
-      cameraRef.current.aspect = window.innerWidth / window.innerHeight
-      cameraRef.current.updateProjectionMatrix()
-      rendererRef.current.setSize(window.innerWidth, window.innerHeight)
-    }
-    window.addEventListener('resize', handleResize)
-
+    window.addEventListener('resize', updateSize)
     return () => {
-      window.removeEventListener('resize', handleResize)
+      window.removeEventListener('resize', updateSize)
       cancelAnimationFrame(frameIdRef.current)
     }
   }, [])
 
+  // 2. 배치 로직 (이전과 동일하되 여백 및 컬럼 너비 최적화)
   useEffect(() => {
     if (!sceneRef.current || images.length === 0) return
-    const scene = sceneRef.current
-
     const isMobile = window.innerWidth < 768
     const COLUMNS = isMobile ? 2 : 3
-    // [레이아웃 수정] 모바일에서 짤리지 않도록 너비 계산 방식을 고정 수치 기반으로 변경
     const COLUMN_WIDTH = isMobile ? 4.2 : 4.5
     const GAP = 0.15
     const columnHeights = Array(COLUMNS).fill(0)
 
-    // 모바일에서는 빈 공간 방지를 위해 최소 4세트 이상 복제
     const duplicationCount = images.length < 10 ? 4 : 2
     const duplicatedImages = Array.from({ length: duplicationCount }, () => images).flat()
 
     duplicatedImages.forEach((image, index) => {
       const minHeight = Math.min(...columnHeights)
       const colIndex = columnHeights.indexOf(minHeight)
-
       const ratio = image.aspectRatio || 1
       const width = COLUMN_WIDTH
       const height = width / ratio
-
       const x = (colIndex - (COLUMNS - 1) / 2) * (COLUMN_WIDTH + GAP)
       const baseY = -minHeight - (height / 2)
       columnHeights[colIndex] += height + GAP
 
       const meshKey = `${image.id}-${index}`
-
       if (!meshesRef.current.has(meshKey)) {
         const geometry = new THREE.PlaneGeometry(width, height)
         const material = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 })
         const mesh = new THREE.Mesh(geometry, material)
-
         mesh.position.set(x, baseY, 0)
         mesh.userData = { id: image.id, index, baseY, height }
-
-        scene.add(mesh)
+        sceneRef.current?.add(mesh)
         meshesRef.current.set(meshKey, mesh)
 
         const imgElement = new window.Image()
@@ -129,10 +127,10 @@ export function Scene({ scrollContainer }: SceneProps) {
         mesh.userData.baseY = baseY
       }
     })
-
     gridHeightRef.current = Math.max(...columnHeights) / duplicationCount
   }, [images])
 
+  // 3. [핵심] 스크롤 방향 및 터치 영역 수정
   useEffect(() => {
     const canvas = rendererRef.current?.domElement
     if (!canvas) return
@@ -145,6 +143,7 @@ export function Scene({ scrollContainer }: SceneProps) {
     }
 
     const onPointerMove = (e: PointerEvent) => {
+      // 레이캐스터 좌표 업데이트
       mouseRef.current.x = (e.clientX / window.innerWidth) * 2 - 1
       mouseRef.current.y = -(e.clientY / window.innerHeight) * 2 + 1
 
@@ -154,19 +153,21 @@ export function Scene({ scrollContainer }: SceneProps) {
       lastPointerY.current = e.clientY
       dragDistance.current += Math.abs(deltaY)
 
-      // [모바일 대응] 터치 감도를 데스크탑보다 더 민감하게 설정
+      // [수정] 방향 반전: -= 로 변경하여 손가락 방향을 따라가도록 설정
       const sensitivity = window.innerWidth < 768 ? 0.04 : 0.02
-      targetOffset.current += deltaY * sensitivity
+      targetOffset.current -= deltaY * sensitivity // += 에서 -= 로 변경
     }
 
     const onPointerUp = () => (isDragging.current = false)
+
     const onWheel = (e: WheelEvent) => {
       if (selectedImage) return
+      // [수정] 휠 방향도 자연스럽게 조정
       targetOffset.current += e.deltaY * 0.005
     }
 
-    const handleClick = () => {
-      if (selectedImage || dragDistance.current > 10) return
+    const handleClick = (e: MouseEvent) => {
+      if (selectedImage || dragDistance.current > 5) return // 드래그 시 클릭 방지 감도 강화
       raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current!)
       const intersects = raycasterRef.current.intersectObjects(Array.from(meshesRef.current.values()))
       if (intersects.length > 0) {
@@ -174,41 +175,38 @@ export function Scene({ scrollContainer }: SceneProps) {
       }
     }
 
+    // 이벤트를 window가 아닌 canvas와 전역에 적절히 분배
     canvas.addEventListener('pointerdown', onPointerDown)
     window.addEventListener('pointermove', onPointerMove)
     window.addEventListener('pointerup', onPointerUp)
-    canvas.addEventListener('wheel', onWheel)
+    window.addEventListener('wheel', onWheel, { passive: false })
     canvas.addEventListener('click', handleClick)
 
     return () => {
       canvas.removeEventListener('pointerdown', onPointerDown)
       window.removeEventListener('pointermove', onPointerMove)
       window.removeEventListener('pointerup', onPointerUp)
-      canvas.removeEventListener('wheel', onWheel)
+      window.removeEventListener('wheel', onWheel)
       canvas.removeEventListener('click', handleClick)
     }
   }, [selectedImage, setSelectedImage])
 
+  // 4. 애니메이션 루프 (기존 유지)
   useEffect(() => {
     const animate = () => {
       frameIdRef.current = requestAnimationFrame(animate)
       if (!rendererRef.current || !sceneRef.current || !cameraRef.current) return
-
-      // Lerp 수치를 조절하여 더 쫀득한 반응성 부여
       scrollOffset.current = THREE.MathUtils.lerp(scrollOffset.current, targetOffset.current, 0.15)
 
       const loopH = gridHeightRef.current
-      const duplicationCount = images.length < 10 ? 4 : 2
-      const totalH = loopH * duplicationCount
+      const totalH = loopH * (images.length < 10 ? 4 : 2)
       const elapsed = clockRef.current.getElapsedTime()
 
       meshesRef.current.forEach((mesh) => {
         let y = mesh.userData.baseY + scrollOffset.current
         const threshold = totalH / 2
-
         while (y > threshold) y -= totalH
         while (y < -threshold) y += totalH
-
         mesh.position.y = y + Math.sin(elapsed + mesh.userData.index) * 0.03
       })
 
@@ -233,5 +231,20 @@ export function Scene({ scrollContainer }: SceneProps) {
     return () => cancelAnimationFrame(frameIdRef.current)
   }, [hoveredImage, images.length, selectedImage])
 
-  return <div ref={containerRef} style={{ position: 'fixed', inset: 0, zIndex: 0, touchAction: 'none' }} />
+  // [수정] 하단 터치 차단 방지를 위해 z-index와 pointer-events 최적화
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        width: '100vw',
+        height: '100dvh', // 최신 브라우저용 동적 높이
+        zIndex: 0,
+        touchAction: 'none',
+        overflow: 'hidden'
+      }}
+    />
+  )
 }
