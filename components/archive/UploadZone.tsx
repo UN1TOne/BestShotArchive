@@ -9,13 +9,19 @@ import { supabase } from '@/lib/supabase'
 
 const UploadContainer = styled.div<{ $isDragging: boolean; $isOpen: boolean }>`
   position: fixed;
-  bottom: 2rem;
-  right: 2rem;
+  bottom: 0; 
+  right: 0;
+  left: 0;   
+  height: 50vh;
   z-index: 100;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
+  justify-content: flex-end;
+  padding: 2rem;
   gap: 1rem;
+
+  pointer-events: none;
 `
 
 const UploadButton = styled.button<{ $isOpen: boolean }>`
@@ -32,6 +38,7 @@ const UploadButton = styled.button<{ $isOpen: boolean }>`
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  pointer-events: auto;
 
   &:hover {
     transform: scale(1.1);
@@ -61,7 +68,8 @@ const DropZone = styled.div<{ $isDragging: boolean; $isVisible: boolean }>`
     props.$isVisible ? 'translateY(0) scale(1)' : 'translateY(20px) scale(0.95)'};
   pointer-events: ${(props) => (props.$isVisible ? 'auto' : 'none')};
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-
+  pointer-events: ${(props) => (props.$isVisible ? 'auto' : 'none')};
+  
   ${(props) =>
     props.$isDragging &&
     `
