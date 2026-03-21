@@ -16,9 +16,9 @@ const Container = styled.div`
   position: relative;
   width: 100%;
   height: 100vh;
-  background: #0a0a14; /* 캔버스 배경이 투명해지면서 이 색상이 기본 배경이 됩니다 */
+  background: #0a0a14; 
   overflow: hidden;
-  cursor: none; /* CustomCursor를 위해 기본 커서 숨김 */
+  cursor: none;
 
   @media (max-width: 768px) {
     cursor: auto;
@@ -27,21 +27,33 @@ const Container = styled.div`
 
 export function Archive() {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const { images, setSession } = useArchiveStore()
+  const { images, setImages, setSession } = useArchiveStore()
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
     })
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
     })
 
     return () => subscription.unsubscribe()
   }, [setSession])
+
+  useEffect(() => {
+    const fetchImages = async () => {
+      const { data, error } = await supabase
+        .from('images')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (data && !error) {
+        setImages(data);
+      }
+    };
+    fetchImages();
+  }, [setImages]);
 
   return (
     <Container>

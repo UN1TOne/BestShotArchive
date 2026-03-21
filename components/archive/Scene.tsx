@@ -17,8 +17,15 @@ export function Scene({ scrollContainer }: SceneProps) {
   const meshesRef = useRef<Map<string, THREE.Mesh>>(new Map())
   const raycasterRef = useRef<THREE.Raycaster>(new THREE.Raycaster())
   const mouseRef = useRef<THREE.Vector2>(new THREE.Vector2(0, 0))
-  const frameIdRef = useRef<number>(0)
   const clockRef = useRef<THREE.Clock>(new THREE.Clock())
+  const frameIdRef = useRef<number>(0)
+
+  const scrollOffset = useRef(0)
+  const targetOffset = useRef(0)
+  const isDragging = useRef(false)
+  const lastPointerY = useRef(0)
+  const gridHeightRef = useRef(0)
+  const dragDistance = useRef(0)
 
   const {
     images,
@@ -26,35 +33,30 @@ export function Scene({ scrollContainer }: SceneProps) {
     setSelectedImage,
     hoveredImage,
     selectedImage,
-    markImageAsOld,
   } = useArchiveStore()
 
+  // 1. 초기화 (기존 유지)
   useEffect(() => {
     if (!containerRef.current) return
-
-    // [핵심 수정 1] 기존에 남아있는 캔버스가 있다면 강제로 모두 지웁니다 (Strict Mode, HMR 대비)
     while (containerRef.current.firstChild) {
       containerRef.current.removeChild(containerRef.current.firstChild)
     }
 
     const scene = new THREE.Scene()
-    scene.background = null // 초기화 시점부터 투명하게 설정
     sceneRef.current = scene
 
-    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 100)
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100)
     camera.position.z = 10
     cameraRef.current = camera
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
     renderer.setSize(window.innerWidth, window.innerHeight)
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-    renderer.setClearColor(0x000000, 0) // WebGL 렌더러 자체를 투명하게
-
+    renderer.setClearColor(0x000000, 0)
     containerRef.current.appendChild(renderer.domElement)
     rendererRef.current = renderer
 
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8)
-    scene.add(ambientLight)
+    scene.add(new THREE.AmbientLight(0xffffff, 1))
 
     const handleResize = () => {
       if (!cameraRef.current || !rendererRef.current) return
@@ -67,191 +69,172 @@ export function Scene({ scrollContainer }: SceneProps) {
     return () => {
       window.removeEventListener('resize', handleResize)
       cancelAnimationFrame(frameIdRef.current)
-
-      if (rendererRef.current) {
-        rendererRef.current.dispose()
-      }
-      if (sceneRef.current) {
-        sceneRef.current.clear()
-      }
-
-      // [핵심 수정 2] Strict Mode로 인해 재마운트 될 때 기존 이미지 데이터 참조를 초기화하여
-      // 다음 렌더링 시 새 캔버스에 이미지가 정상적으로 다시 그려지도록 유도합니다.
-      meshesRef.current.clear()
-
-      // 안전한 DOM 노드 제거
-      if (containerRef.current && rendererRef.current) {
-        if (containerRef.current.contains(rendererRef.current.domElement)) {
-          containerRef.current.removeChild(rendererRef.current.domElement)
-        }
-      }
     }
   }, [])
 
+  // 2. 가상 복제 배치 로직 (무한 루프 끊김 방지)
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      mouseRef.current.x = (e.clientX / window.innerWidth) * 2 - 1
-      mouseRef.current.y = -(e.clientY / window.innerHeight) * 2 + 1
-    }
-
-    const handleClick = () => {
-      if (!cameraRef.current || !sceneRef.current) return
-      raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current)
-      const meshArray = Array.from(meshesRef.current.values())
-      const intersects = raycasterRef.current.intersectObjects(meshArray)
-
-      if (intersects.length > 0) {
-        const mesh = intersects[0].object as THREE.Mesh
-        const imageId = mesh.userData.id
-        setSelectedImage(imageId)
-      }
-    }
-
-    window.addEventListener('mousemove', handleMouseMove)
-    window.addEventListener('click', handleClick)
-
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('click', handleClick)
-    }
-  }, [setSelectedImage])
-
-  // 이미지 텍스처 로딩 및 렌더링
-  useEffect(() => {
-    if (!sceneRef.current) return
+    if (!sceneRef.current || images.length === 0) return
     const scene = sceneRef.current
 
-    images.forEach((image, index) => {
-      if (!meshesRef.current.has(image.id)) {
-        const baseSize = 3
-        const width = image.aspectRatio >= 1 ? baseSize : baseSize * image.aspectRatio
-        const height = image.aspectRatio >= 1 ? baseSize / image.aspectRatio : baseSize
+    const isMobile = window.innerWidth < 768
+    const COLUMNS = isMobile ? 2 : 3
+    // [수정] 너비를 더 키워 여백을 줄이고 해상도 차이를 메꿈
+    const COLUMN_WIDTH = isMobile ? (window.innerWidth / 130) : (window.innerWidth / 240)
+    const GAP = 0.15
+    const columnHeights = Array(COLUMNS).fill(0)
 
-        const geometry = new THREE.PlaneGeometry(width, height, 16, 16)
-        const material = new THREE.MeshBasicMaterial({
-          transparent: true,
-          opacity: 0,
-          color: 0xffffff
-        })
+    // [핵심] 이미지 개수가 10개 미만이면 3번, 그 이상이면 2번 복제하여 충분한 높이 확보
+    const duplicationCount = images.length < 10 ? 3 : 2
+    const duplicatedImages = Array.from({ length: duplicationCount }, () => images).flat()
 
+    duplicatedImages.forEach((image, index) => {
+      const minHeight = Math.min(...columnHeights)
+      const colIndex = columnHeights.indexOf(minHeight)
+
+      const ratio = image.aspectRatio || 1
+      const width = COLUMN_WIDTH
+      const height = width / ratio
+
+      // [수정] x축 간격도 COLUMN_WIDTH에 딱 맞춰서 벌어지지 않게 고정
+      const x = (colIndex - (COLUMNS - 1) / 2) * (COLUMN_WIDTH + GAP)
+
+      // [수정] 이미지의 '중심'이 아닌 '상단'을 기준으로 높이를 계산하여 틈새를 없앰
+      const baseY = -minHeight - (height / 2)
+      columnHeights[colIndex] += height + GAP
+
+      const meshKey = `${image.id}-${index}`
+
+      if (!meshesRef.current.has(meshKey)) {
+        const geometry = new THREE.PlaneGeometry(width, height)
+        const material = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 })
         const mesh = new THREE.Mesh(geometry, material)
 
-        const targetX = image.position?.x ?? (Math.random() - 0.5) * 10
-        const targetY = image.position?.y ?? (Math.random() - 0.5) * 6
-        const targetZ = image.position?.z ?? (Math.random() * -3)
-
-        mesh.position.set(targetX, targetY + 2, targetZ)
-        mesh.rotation.z = (Math.random() - 0.5) * 0.2
-        mesh.userData = { id: image.id, index, initialY: targetY }
+        mesh.position.set(x, baseY, 0)
+        mesh.userData = { id: image.id, index, baseY, height }
 
         scene.add(mesh)
-        meshesRef.current.set(image.id, mesh)
+        meshesRef.current.set(meshKey, mesh)
 
         const imgElement = new window.Image()
-
-        // [핵심 해결 포인트] Base64(업로드된 파일)일 경우 CORS 설정을 하지 않음
-        if (!image.url.startsWith('data:')) {
-          imgElement.crossOrigin = 'anonymous'
-        }
-
+        if (!image.url.startsWith('data:')) imgElement.crossOrigin = 'anonymous'
         imgElement.src = image.url
-
         imgElement.onload = () => {
           const texture = new THREE.Texture(imgElement)
           texture.colorSpace = THREE.SRGBColorSpace
           texture.needsUpdate = true
-
           material.map = texture
           material.needsUpdate = true
-
-          // 로딩 성공 시 캔버스 내부에 사진이 나타남
-          gsap.to(mesh.position, { y: targetY, duration: 1.5, ease: 'expo.out' })
-          gsap.to(material, { opacity: 1, duration: 1 })
-
-          if (image.isNew && markImageAsOld) {
-            markImageAsOld(image.id)
-          }
+          gsap.to(material, { opacity: 1, duration: 0.8 })
         }
-
-        imgElement.onerror = (err) => {
-          console.error('이미지 로드 실패:', err, image.url);
-        }
+      } else {
+        const mesh = meshesRef.current.get(meshKey)!
+        mesh.position.set(x, baseY, 0)
+        mesh.userData.baseY = baseY
       }
     })
 
-    const currentIds = new Set(images.map((img) => img.id))
-    meshesRef.current.forEach((mesh, id) => {
-      if (!currentIds.has(id)) {
-        scene.remove(mesh)
-        mesh.geometry.dispose()
+    // [중요] 한 세트의 실제 높이를 정확히 계산하여 루프 단위로 설정
+    gridHeightRef.current = Math.max(...columnHeights) / duplicationCount
+  }, [images])
 
-        const material = mesh.material as THREE.MeshBasicMaterial
-        if (material.map) {
-          material.map.dispose()
-        }
-        material.dispose()
+  // 3. 입력 이벤트 (기존 방향 유지)
+  useEffect(() => {
+    const canvas = rendererRef.current?.domElement
+    if (!canvas) return
 
-        meshesRef.current.delete(id)
+    const onPointerDown = (e: PointerEvent) => {
+      if (selectedImage) return
+      isDragging.current = true
+      lastPointerY.current = e.clientY
+      dragDistance.current = 0
+    }
+
+    const onPointerMove = (e: PointerEvent) => {
+      mouseRef.current.x = (e.clientX / window.innerWidth) * 2 - 1
+      mouseRef.current.y = -(e.clientY / window.innerHeight) * 2 + 1
+      if (!isDragging.current) return
+      const deltaY = e.clientY - lastPointerY.current
+      lastPointerY.current = e.clientY
+      dragDistance.current += Math.abs(deltaY)
+      targetOffset.current += deltaY * 0.02
+    }
+
+    const onPointerUp = () => (isDragging.current = false)
+    const onWheel = (e: WheelEvent) => {
+      if (selectedImage) return
+      targetOffset.current += e.deltaY * 0.005
+    }
+
+    const handleClick = () => {
+      if (selectedImage || dragDistance.current > 10) return
+      raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current!)
+      const intersects = raycasterRef.current.intersectObjects(Array.from(meshesRef.current.values()))
+      if (intersects.length > 0) {
+        setSelectedImage((intersects[0].object as THREE.Mesh).userData.id)
       }
-    })
-  }, [images, markImageAsOld])
+    }
 
+    canvas.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', onPointerUp)
+    canvas.addEventListener('wheel', onWheel)
+    canvas.addEventListener('click', handleClick)
+
+    return () => {
+      canvas.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', onPointerUp)
+      canvas.removeEventListener('wheel', onWheel)
+      canvas.removeEventListener('click', handleClick)
+    }
+  }, [selectedImage, setSelectedImage])
+
+  // 4. 애니메이션 루프 (개선된 무한 루핑 수식)
   useEffect(() => {
     const animate = () => {
       frameIdRef.current = requestAnimationFrame(animate)
       if (!rendererRef.current || !sceneRef.current || !cameraRef.current) return
 
+      scrollOffset.current = THREE.MathUtils.lerp(scrollOffset.current, targetOffset.current, 0.1)
+
+      const loopH = gridHeightRef.current
+      const totalH = loopH * (images.length < 10 ? 3 : 2) // 복제본을 포함한 전체 높이
       const elapsed = clockRef.current.getElapsedTime()
 
-      // [최적화 핵심] View 모드(모달이 열린 상태)일 때는 무거운 연산을 스킵합니다.
-      if (selectedImage) {
-        // 둥둥 떠다니는 애니메이션(Floating)만 가볍게 돌리고, 
-        // 무거운 Raycaster(Hover 감지)와 카메라 이동은 멈춥니다.
-        meshesRef.current.forEach((mesh) => {
-          mesh.position.y = mesh.userData.initialY + Math.sin(elapsed + mesh.userData.index) * 0.1
-        })
-        rendererRef.current.render(sceneRef.current, cameraRef.current)
-        return // 여기서 함수를 종료하여 아래의 무거운 로직을 실행하지 않음
-      }
+      meshesRef.current.forEach((mesh) => {
+        // baseY를 기준으로 현재 스크롤 위치 적용
+        let y = mesh.userData.baseY + scrollOffset.current
 
-      // --- 아래는 모달이 닫혀있을 때만 실행되는 로직 ---
+        // [순환 알고리즘] 
+        // y가 totalH/2를 넘어가면 아래로, -totalH/2보다 작아지면 위로 순간이동
+        const threshold = totalH / 2
+        while (y > threshold) y -= totalH
+        while (y < -threshold) y += totalH
 
-      // Mouse Lerp for Camera
-      cameraRef.current.position.x += (mouseRef.current.x * 2 - cameraRef.current.position.x) * 0.05
-      cameraRef.current.position.y += (mouseRef.current.y * 2 - cameraRef.current.position.y) * 0.05
-      cameraRef.current.lookAt(0, 0, 0)
-
-      // Raycaster for Hover interactions
-      raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current)
-      const meshArray = Array.from(meshesRef.current.values())
-      const intersects = raycasterRef.current.intersectObjects(meshArray)
-
-      let newHoveredId: string | null = null
-
-      meshesRef.current.forEach((mesh, id) => {
-        const isHovered = intersects.length > 0 && intersects[0].object === mesh
-        const targetY = mesh.userData.initialY
-
-        if (isHovered) {
-          newHoveredId = id
-          mesh.scale.lerp(new THREE.Vector3(1.05, 1.05, 1.05), 0.1)
-        } else {
-          mesh.scale.lerp(new THREE.Vector3(1, 1, 1), 0.1)
-        }
-
-        mesh.position.y = targetY + Math.sin(elapsed + mesh.userData.index) * 0.1
+        mesh.position.y = y + Math.sin(elapsed + mesh.userData.index) * 0.03
       })
 
-      if (newHoveredId !== hoveredImage) {
-        setHoveredImage(newHoveredId)
+      if (!selectedImage) {
+        raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current)
+        const intersects = raycasterRef.current.intersectObjects(Array.from(meshesRef.current.values()))
+        let newHoveredId: string | null = null
+        meshesRef.current.forEach((mesh) => {
+          const isHovered = intersects.length > 0 && intersects[0].object === mesh
+          if (isHovered) {
+            newHoveredId = mesh.userData.id
+            mesh.scale.lerp(new THREE.Vector3(1.03, 1.03, 1.03), 0.1)
+          } else {
+            mesh.scale.lerp(new THREE.Vector3(1, 1, 1), 0.1)
+          }
+        })
+        if (newHoveredId !== hoveredImage) setHoveredImage(newHoveredId)
       }
-
       rendererRef.current.render(sceneRef.current, cameraRef.current)
     }
-
     animate()
     return () => cancelAnimationFrame(frameIdRef.current)
   }, [hoveredImage, setHoveredImage, selectedImage])
 
-  return <div ref={containerRef} style={{ position: 'fixed', inset: 0, zIndex: 0 }} />
+  return <div ref={containerRef} style={{ position: 'fixed', inset: 0, zIndex: 0, touchAction: 'none' }} />
 }

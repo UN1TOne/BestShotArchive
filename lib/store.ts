@@ -40,6 +40,7 @@ export interface ArchiveStore {
   isLoginModalOpen: boolean
 
   // 액션
+  setImages: (images: any[]) => void
   addImage: (image: NewImageData) => void
   removeImage: (id: string) => void
   setHoveredImage: (id: string | null) => void
@@ -101,6 +102,34 @@ export const useArchiveStore = create<ArchiveStore>((set, get) => ({
   // Auth 초기값
   session: null,
   isLoginModalOpen: false,
+
+  setImages: (fetchedImages) => {
+    console.log('[Store] Fetched first image data:', fetchedImages[0]);
+    const formattedImages: ImageData[] = fetchedImages.map((img, index) => {
+      // DB에 좌표가 있으면 쓰고, 없으면 계산 (현재 Scene에서 배치하므로 기본값 부여)
+      const dbRatio = Number(img.aspect_ratio);
+      const validRatio = dbRatio && dbRatio > 0 ? dbRatio : 1;
+
+      return {
+        id: img.id,
+        url: img.url,
+        aspectRatio: validRatio,
+        width: img.width,
+        height: img.height,
+        title: img.title,
+        position: {
+          x: img.position_x ?? 0,
+          y: img.position_y ?? 0,
+          z: img.position_z ?? 0,
+        },
+        rotation: calculateRotation(),
+        scale: 0.8 + Math.random() * 0.4,
+        isNew: false,
+      }
+    })
+
+    set({ images: formattedImages })
+  },
 
   addImage: (imageData) => {
     const { images } = get()
