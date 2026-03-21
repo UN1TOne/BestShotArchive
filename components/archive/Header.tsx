@@ -132,26 +132,37 @@ const HamburgerButton = styled.button`
   }
 `
 
-/* [수정] 모바일 오버레이: 가시성(visibility)과 불투명도(opacity)로 철저히 은닉 */
 const MobileOverlay = styled.div<{ $isOpen: boolean }>`
   display: none;
 
   @media (max-width: 768px) {
     display: flex;
     position: fixed;
-    inset: 0;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    
+    height: 100vh;
+    height: 100dvh; 
+    overflow-y: auto; 
+    
     background: rgba(10, 10, 20, 0.98);
     z-index: 1050;
     flex-direction: column;
-    padding: 7rem 2rem 2rem;
+    padding: 7rem 2rem 3rem; 
     gap: 2.5rem;
     
-    /* 애니메이션 및 가시성 설정 */
     opacity: ${({ $isOpen }) => ($isOpen ? 1 : 0)};
     visibility: ${({ $isOpen }) => ($isOpen ? 'visible' : 'hidden')};
     transform: ${({ $isOpen }) => ($isOpen ? 'translateY(0)' : 'translateY(-20px)')};
     transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     pointer-events: ${({ $isOpen }) => ($isOpen ? 'auto' : 'none')};
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
 `
 
