@@ -35,7 +35,6 @@ export function Scene({ scrollContainer }: SceneProps) {
     selectedImage,
   } = useArchiveStore()
 
-  // 1. 초기화 (기존 유지)
   useEffect(() => {
     if (!containerRef.current) return
     while (containerRef.current.firstChild) {
@@ -45,8 +44,9 @@ export function Scene({ scrollContainer }: SceneProps) {
     const scene = new THREE.Scene()
     sceneRef.current = scene
 
-    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100)
-    camera.position.z = 10
+    // [모바일 대응] FOV를 살짝 키워 더 넓은 영역을 보이게 함
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100)
+    camera.position.z = 12
     cameraRef.current = camera
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
@@ -56,7 +56,7 @@ export function Scene({ scrollContainer }: SceneProps) {
     containerRef.current.appendChild(renderer.domElement)
     rendererRef.current = renderer
 
-    scene.add(new THREE.AmbientLight(0xffffff, 1))
+    scene.add(new THREE.AmbientLight(0xffffff, 1.2))
 
     const handleResize = () => {
       if (!cameraRef.current || !rendererRef.current) return
@@ -72,20 +72,19 @@ export function Scene({ scrollContainer }: SceneProps) {
     }
   }, [])
 
-  // 2. 가상 복제 배치 로직 (무한 루프 끊김 방지)
   useEffect(() => {
     if (!sceneRef.current || images.length === 0) return
     const scene = sceneRef.current
 
     const isMobile = window.innerWidth < 768
     const COLUMNS = isMobile ? 2 : 3
-    // [수정] 너비를 더 키워 여백을 줄이고 해상도 차이를 메꿈
-    const COLUMN_WIDTH = isMobile ? (window.innerWidth / 130) : (window.innerWidth / 240)
+    // [레이아웃 수정] 모바일에서 짤리지 않도록 너비 계산 방식을 고정 수치 기반으로 변경
+    const COLUMN_WIDTH = isMobile ? 4.2 : 4.5
     const GAP = 0.15
     const columnHeights = Array(COLUMNS).fill(0)
 
-    // [핵심] 이미지 개수가 10개 미만이면 3번, 그 이상이면 2번 복제하여 충분한 높이 확보
-    const duplicationCount = images.length < 10 ? 3 : 2
+    // 모바일에서는 빈 공간 방지를 위해 최소 4세트 이상 복제
+    const duplicationCount = images.length < 10 ? 4 : 2
     const duplicatedImages = Array.from({ length: duplicationCount }, () => images).flat()
 
     duplicatedImages.forEach((image, index) => {
@@ -96,10 +95,7 @@ export function Scene({ scrollContainer }: SceneProps) {
       const width = COLUMN_WIDTH
       const height = width / ratio
 
-      // [수정] x축 간격도 COLUMN_WIDTH에 딱 맞춰서 벌어지지 않게 고정
       const x = (colIndex - (COLUMNS - 1) / 2) * (COLUMN_WIDTH + GAP)
-
-      // [수정] 이미지의 '중심'이 아닌 '상단'을 기준으로 높이를 계산하여 틈새를 없앰
       const baseY = -minHeight - (height / 2)
       columnHeights[colIndex] += height + GAP
 
@@ -134,11 +130,9 @@ export function Scene({ scrollContainer }: SceneProps) {
       }
     })
 
-    // [중요] 한 세트의 실제 높이를 정확히 계산하여 루프 단위로 설정
     gridHeightRef.current = Math.max(...columnHeights) / duplicationCount
   }, [images])
 
-  // 3. 입력 이벤트 (기존 방향 유지)
   useEffect(() => {
     const canvas = rendererRef.current?.domElement
     if (!canvas) return
@@ -153,11 +147,16 @@ export function Scene({ scrollContainer }: SceneProps) {
     const onPointerMove = (e: PointerEvent) => {
       mouseRef.current.x = (e.clientX / window.innerWidth) * 2 - 1
       mouseRef.current.y = -(e.clientY / window.innerHeight) * 2 + 1
+
       if (!isDragging.current) return
+
       const deltaY = e.clientY - lastPointerY.current
       lastPointerY.current = e.clientY
       dragDistance.current += Math.abs(deltaY)
-      targetOffset.current += deltaY * 0.02
+
+      // [모바일 대응] 터치 감도를 데스크탑보다 더 민감하게 설정
+      const sensitivity = window.innerWidth < 768 ? 0.04 : 0.02
+      targetOffset.current += deltaY * sensitivity
     }
 
     const onPointerUp = () => (isDragging.current = false)
@@ -190,25 +189,23 @@ export function Scene({ scrollContainer }: SceneProps) {
     }
   }, [selectedImage, setSelectedImage])
 
-  // 4. 애니메이션 루프 (개선된 무한 루핑 수식)
   useEffect(() => {
     const animate = () => {
       frameIdRef.current = requestAnimationFrame(animate)
       if (!rendererRef.current || !sceneRef.current || !cameraRef.current) return
 
-      scrollOffset.current = THREE.MathUtils.lerp(scrollOffset.current, targetOffset.current, 0.1)
+      // Lerp 수치를 조절하여 더 쫀득한 반응성 부여
+      scrollOffset.current = THREE.MathUtils.lerp(scrollOffset.current, targetOffset.current, 0.15)
 
       const loopH = gridHeightRef.current
-      const totalH = loopH * (images.length < 10 ? 3 : 2) // 복제본을 포함한 전체 높이
+      const duplicationCount = images.length < 10 ? 4 : 2
+      const totalH = loopH * duplicationCount
       const elapsed = clockRef.current.getElapsedTime()
 
       meshesRef.current.forEach((mesh) => {
-        // baseY를 기준으로 현재 스크롤 위치 적용
         let y = mesh.userData.baseY + scrollOffset.current
-
-        // [순환 알고리즘] 
-        // y가 totalH/2를 넘어가면 아래로, -totalH/2보다 작아지면 위로 순간이동
         const threshold = totalH / 2
+
         while (y > threshold) y -= totalH
         while (y < -threshold) y += totalH
 
@@ -234,7 +231,7 @@ export function Scene({ scrollContainer }: SceneProps) {
     }
     animate()
     return () => cancelAnimationFrame(frameIdRef.current)
-  }, [hoveredImage, setHoveredImage, selectedImage])
+  }, [hoveredImage, images.length, selectedImage])
 
   return <div ref={containerRef} style={{ position: 'fixed', inset: 0, zIndex: 0, touchAction: 'none' }} />
 }
