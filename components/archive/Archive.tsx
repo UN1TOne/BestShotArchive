@@ -11,6 +11,7 @@ import { ImageModal } from './ImageModal'
 import { useArchiveStore } from '@/lib/store'
 import { LoginModal } from './LoginModal'
 import { supabase } from '@/lib/supabase'
+import { BentoGallery } from './BentoGallery'
 
 const Container = styled.div`
   position: relative;
@@ -59,7 +60,8 @@ export function Archive() {
     <Container>
       <CustomCursor />
       <Header />
-      <Scene scrollContainer={scrollContainerRef} />
+      {/* <Scene scrollContainer={scrollContainerRef} /> */}
+      <BentoGallery />
       {images.length === 0 && <EmptyState />}
       <UploadZone />
       <ImageModal />
