@@ -31,8 +31,11 @@ export function Archive() {
   // const scrollContainerRef = useRef<HTMLDivElement>(null)
   const { images, setImages, setSession } = useArchiveStore()
   const [isMobile, setIsMobile] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
+    setIsMounted(true);
+
     const mql = window.matchMedia('(max-width: 768px)');
 
     setIsMobile(mql.matches);
@@ -42,9 +45,12 @@ export function Archive() {
     };
 
     mql.addEventListener('change', onChange);
-
     return () => mql.removeEventListener('change', onChange);
   }, []);
+
+  if (!isMounted) {
+    return <Container style={{ background: '#0a0a14' }} />;
+  }
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
