@@ -1,8 +1,14 @@
 'use client'
 
 import { useRef, useEffect } from 'react'
-import styled from 'styled-components'
+import styled, { keyframes } from 'styled-components'
 import { useArchiveStore } from '@/lib/store'
+
+const pulse = keyframes`
+  0% { background-color: rgba(255, 255, 255, 0.05); }
+  50% { background-color: rgba(255, 255, 255, 0.1); }
+  100% { background-color: rgba(255, 255, 255, 0.05); }
+`
 
 const ScrollContainer = styled.div`
   position: absolute;
@@ -38,6 +44,7 @@ const ImageWrapper = styled.div`
   border-radius: 12px;
   overflow: hidden;
   cursor: pointer;
+  background: rgba(255, 255, 255, 0.05); /* 로딩 전 배경색 */
   
   transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1), box-shadow 0.3s ease;
   
@@ -48,10 +55,14 @@ const ImageWrapper = styled.div`
 
   @media (max-width: 768px) { 
     margin-bottom: 0.5rem; 
-    &:hover {
-      transform: none;
-    }
+    &:hover { transform: none; }
   }
+`
+
+const SkeletonBox = styled.div<{ height: string }>`
+  width: 100%;
+  height: ${props => props.height};
+  animation: ${pulse} 1.5s infinite ease-in-out;
 `
 
 const DummyImage = styled.img`
@@ -59,15 +70,25 @@ const DummyImage = styled.img`
   height: 100%;
   object-fit: cover;
   display: block;
+  /* 이미지가 로드될 때 부드럽게 나타나도록 애니메이션 추가 */
+  animation: fadeIn 0.5s ease-in-out;
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
 `
 
-export function BentoGallery() {
+interface BentoGalleryProps {
+    isLoading: boolean;
+}
+
+export function BentoGallery({ isLoading }: BentoGalleryProps) {
     const scrollRef = useRef<HTMLDivElement>(null)
     const { images, setSelectedImage } = useArchiveStore()
 
-    // 무한 스크롤 루프 핸들러 (3세트 기준 위아래 순간이동)
     const handleScroll = () => {
-        if (!scrollRef.current) return
+        if (!scrollRef.current || isLoading) return
         const el = scrollRef.current
         const setHeight = el.scrollHeight / 3
 
@@ -79,7 +100,7 @@ export function BentoGallery() {
     }
 
     useEffect(() => {
-        if (scrollRef.current && images.length > 0) {
+        if (scrollRef.current && images.length > 0 && !isLoading) {
             const timeoutId = setTimeout(() => {
                 if (scrollRef.current) {
                     scrollRef.current.scrollTop = scrollRef.current.scrollHeight / 3
@@ -87,26 +108,38 @@ export function BentoGallery() {
             }, 50)
             return () => clearTimeout(timeoutId)
         }
-    }, [images])
+    }, [images, isLoading])
 
     return (
         <ScrollContainer ref={scrollRef} onScroll={handleScroll}>
-            {Array.from({ length: 3 }).map((_, setIndex) => (
-                <GridContainer key={setIndex}>
-                    {images.map((img) => (
-                        <ImageWrapper
-                            key={`${setIndex}-${img.id}`}
-                            onClick={() => setSelectedImage(img.id)}
-                        >
-                            <DummyImage
-                                src={img.url}
-                                alt={img.title || 'Archive Image'}
-                                loading="lazy"
-                            />
+            {/* 1. 로딩 중일 때 스켈레톤 그리드 표시 */}
+            {isLoading ? (
+                <GridContainer>
+                    {[250, 320, 180, 400, 300, 220, 350, 280, 200].map((h, i) => (
+                        <ImageWrapper key={`skeleton-${i}`}>
+                            <SkeletonBox height={`${h}px`} />
                         </ImageWrapper>
                     ))}
                 </GridContainer>
-            ))}
+            ) : (
+                /* 2. 로딩 완료 후 실제 이미지 그리드 (3세트 무한루프) */
+                Array.from({ length: 3 }).map((_, setIndex) => (
+                    <GridContainer key={setIndex}>
+                        {images.map((img) => (
+                            <ImageWrapper
+                                key={`${setIndex}-${img.id}`}
+                                onClick={() => setSelectedImage(img.id)}
+                            >
+                                <DummyImage
+                                    src={img.url}
+                                    alt={img.title || 'Archive Image'}
+                                    loading="lazy"
+                                />
+                            </ImageWrapper>
+                        ))}
+                    </GridContainer>
+                ))
+            )}
         </ScrollContainer>
     )
 }

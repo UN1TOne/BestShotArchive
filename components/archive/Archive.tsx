@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import styled from 'styled-components'
 import { Header } from './Header'
 import { UploadZone } from './UploadZone'
@@ -18,7 +18,8 @@ const Container = styled.div`
   width: 100%;
   height: 100dvh;
   background: #0a0a14;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   cursor: none;
 
   @media (max-width: 768px) {
@@ -30,6 +31,7 @@ export function Archive() {
   const { images, setImages, setSession } = useArchiveStore()
   const [isMobile, setIsMobile] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
     setIsMounted(true)
@@ -38,29 +40,35 @@ export function Archive() {
 
     const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
     mql.addEventListener('change', handler)
-    return () => mql.removeEventListener('change', handler)
-  }, [])
 
-  useEffect(() => {
+    // Auth Session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
     })
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
     })
-    return () => subscription.unsubscribe()
-  }, [setSession])
 
-  useEffect(() => {
+    // Fetch Images
     const fetchImages = async () => {
-      const { data, error } = await supabase
-        .from('images')
-        .select('*')
-        .order('created_at', { ascending: false })
-      if (data && !error) setImages(data)
+      try {
+        const { data, error } = await supabase
+          .from('images')
+          .select('*')
+          .order('created_at', { ascending: false })
+
+        if (data && !error) setImages(data)
+      } finally {
+        setIsLoading(false)
+      }
     }
     fetchImages()
-  }, [setImages])
+
+    return () => {
+      mql.removeEventListener('change', handler)
+      subscription.unsubscribe()
+    }
+  }, [setImages, setSession])
 
   if (!isMounted) {
     return <Container style={{ background: '#0a0a14' }} />
@@ -70,11 +78,15 @@ export function Archive() {
     <Container>
       <CustomCursor />
       <Header />
-      <BentoGallery />
+
+      {(isLoading || images.length > 0) ? (
+        <BentoGallery isLoading={isLoading} />
+      ) : (
+        <EmptyState />
+      )}
 
       {!isMobile && <ScrollShaderOverlay />}
 
-      {images.length === 0 && <EmptyState />}
       <UploadZone />
       <ImageModal />
       <LoginModal />
