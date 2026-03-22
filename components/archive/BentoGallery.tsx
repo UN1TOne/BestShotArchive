@@ -1,25 +1,25 @@
 'use client'
 
 import React, { useRef, useEffect, useState, useMemo, memo } from 'react'
-import styled, { keyframes, css } from 'styled-components'
+import styled, { keyframes } from 'styled-components'
 import { useArchiveStore } from '@/lib/store'
 import { useShallow } from 'zustand/react/shallow'
 import { EmptyState } from './EmptyState'
 
 const pulse = keyframes`
-  0% { background-color: rgba(255, 255, 255, 0.03); }
-  50% { background-color: rgba(255, 255, 255, 0.08); }
-  100% { background-color: rgba(255, 255, 255, 0.03); }
+  0% { background: rgba(255,255,255,0.03); }
+  50% { background: rgba(255,255,255,0.08); }
+  100% { background: rgba(255,255,255,0.03); }
 `;
 
-const ScrollContainer = styled.div`
+const ScrollContainer = styled.div<{ $isVisible: boolean }>`
   position: absolute;
   inset: 0;
   overflow-y: auto;
-  overflow-x: hidden;
-  -webkit-overflow-scrolling: touch;
-  z-index: 10; 
+  z-index: 10;
   padding: 0 2rem;
+  opacity: ${props => props.$isVisible ? 1 : 0};
+  transition: opacity 0.5s ease-in-out;
   scrollbar-width: none;
   &::-webkit-scrollbar { display: none; }
   @media (max-width: 768px) { padding: 0 1rem; }
@@ -39,65 +39,54 @@ const Column = styled.div`
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  contain: layout style;
   @media (max-width: 768px) { gap: 0.5rem; }
 `
 
 const ImageWrapper = styled.div<{ $ratio: number }>`
   position: relative;
   width: 100%;
-  aspect-ratio: ${props => props.$ratio};
+  aspect-ratio: ${props => props.$ratio || '3/4'};
   border-radius: 12px;
   overflow: hidden;
   background: #1a1a2e;
   cursor: pointer;
-  pointer-events: auto;
-  transform: translateZ(0);
-  contain: paint;
-  transition: transform 0.2s ease-out;
-
-  &:active { transform: scale(0.97); }
+  -webkit-tap-highlight-color: transparent;
+  
+  &:active { transform: scale(0.98); }
 `
 
 const SkeletonInner = styled.div`
   width: 100%;
   height: 100%;
-  animation: ${pulse} 1.5s infinite ease-in-out;
-`;
+  animation: ${pulse} 1.5s infinite;
+`
 
-const StyledImage = styled.img<{ $isLoaded: boolean }>`
+const StyledImage = styled.img<{ $loaded: boolean }>`
   width: 100%;
   height: 100%;
   object-fit: cover;
-  display: block;
-  opacity: ${props => props.$isLoaded ? 1 : 0};
-  transition: opacity 0.5s ease-in-out;
-  pointer-events: none;
+  opacity: ${props => props.$loaded ? 1 : 0};
+  transition: opacity 0.4s ease;
 `
 
 const ImageItem = memo(({ img, onClick }: { img: any, onClick: (id: string) => void }) => {
     const [isLoaded, setIsLoaded] = useState(false);
     const ratio = useMemo(() => img.width / img.height || 0.75, [img.width, img.height]);
 
-    useEffect(() => {
-        let isCancelled = false;
-        const handle = (window as any).requestIdleCallback(() => {
-            const i = new Image();
-            i.src = img.url;
-            i.decode().then(() => { if (!isCancelled) setIsLoaded(true); });
-        });
-        return () => { isCancelled = true; (window as any).cancelIdleCallback(handle); };
-    }, [img.url]);
-
     return (
         <ImageWrapper $ratio={ratio} onClick={() => onClick(img.id)}>
-            <StyledImage src={img.url} $isLoaded={isLoaded} alt="" />
+            <StyledImage
+                src={img.url}
+                $loaded={isLoaded}
+                onLoad={() => setIsLoaded(true)}
+                loading="lazy"
+            />
             {!isLoaded && <SkeletonInner />}
         </ImageWrapper>
     );
 });
 
-export function BentoGallery({ isPageReady }: { isPageReady: boolean }) {
+export function BentoGallery({ isVisible }: { isVisible: boolean }) {
     const scrollRef = useRef<HTMLDivElement>(null)
     const { images, setSelectedImage } = useArchiveStore(useShallow(state => ({
         images: state.images,
@@ -107,6 +96,7 @@ export function BentoGallery({ isPageReady }: { isPageReady: boolean }) {
     const columns = useMemo(() => {
         const colCount = typeof window !== 'undefined' && window.innerWidth <= 768 ? 2 : 3;
         const result: any[][] = Array.from({ length: colCount }, () => []);
+
         if (images.length > 0) {
             const tripled = [...images, ...images, ...images];
             tripled.forEach((img, i) => result[i % colCount].push(img));
@@ -115,7 +105,7 @@ export function BentoGallery({ isPageReady }: { isPageReady: boolean }) {
     }, [images]);
 
     const handleScroll = () => {
-        if (!scrollRef.current || !isPageReady) return
+        if (!scrollRef.current || !isVisible) return
         const el = scrollRef.current
         const setHeight = el.scrollHeight / 3
         if (el.scrollTop >= setHeight * 2) el.scrollTop -= setHeight
@@ -125,14 +115,16 @@ export function BentoGallery({ isPageReady }: { isPageReady: boolean }) {
     useEffect(() => {
         if (scrollRef.current && images.length > 0) {
             const el = scrollRef.current;
-            el.scrollTop = el.scrollHeight / 3;
+            if (el.scrollTop === 0) {
+                el.scrollTop = el.scrollHeight / 3;
+            }
         }
-    }, [images.length])
+    }, [images.length, isVisible])
 
-    if (images.length === 0 && isPageReady) return <EmptyState />
+    if (images.length === 0 && isVisible) return <EmptyState />
 
     return (
-        <ScrollContainer ref={scrollRef} onScroll={handleScroll}>
+        <ScrollContainer ref={scrollRef} onScroll={handleScroll} $isVisible={isVisible}>
             <MasonryGrid>
                 {columns.map((col, colIdx) => (
                     <Column key={`col-${colIdx}`}>
@@ -140,7 +132,9 @@ export function BentoGallery({ isPageReady }: { isPageReady: boolean }) {
                             <ImageItem
                                 key={`${colIdx}-${imgIdx}-${img.id}`}
                                 img={img}
-                                onClick={setSelectedImage}
+                                onClick={(id) => {
+                                    setSelectedImage(id);
+                                }}
                             />
                         ))}
                     </Column>

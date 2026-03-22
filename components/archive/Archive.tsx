@@ -15,75 +15,70 @@ import { LoginModal } from './LoginModal'
 const ScrollShaderOverlay = dynamic(() => import('./ScrollShaderOverlay'), { ssr: false })
 const CustomCursor = dynamic(() => import('./CustomCursor').then(mod => mod.CustomCursor), { ssr: false })
 
-const GlobalFlickerFix = createGlobalStyle`
+const GlobalStyle = createGlobalStyle`
   canvas, .cursor-container {
     pointer-events: none !important;
-    user-select: none !important;
+  }
+  body {
+    background: #0a0a14;
+    overscroll-behavior: none; 
   }
 `;
 
-const PageWrapper = styled.div<{ $isVisible: boolean }>`
-  opacity: ${props => props.$isVisible ? 1 : 0};
-  transition: opacity 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
-  background: #0a0a14;
+const Container = styled.div`
+  position: relative;
   width: 100%;
   height: 100dvh;
-  position: relative;
+  background: #0a0a14;
   overflow: hidden;
   contain: layout paint; 
 `;
 
 export function Archive() {
-  const { setImages, setSession } = useArchiveStore(
-    useShallow((state) => ({
-      setImages: state.setImages,
-      setSession: state.setSession,
-    }))
-  )
+  const { setImages, setSession } = useArchiveStore(useShallow(state => ({
+    setImages: state.setImages,
+    setSession: state.setSession
+  })))
 
-  const [isPageReady, setIsPageReady] = useState(false)
+  const [isMounted, setIsMounted] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
+  const [initLoaded, setInitLoaded] = useState(false)
 
   useEffect(() => {
+    setIsMounted(true)
     const mql = window.matchMedia('(max-width: 768px)')
     setIsMobile(mql.matches)
 
-    const init = async () => {
-      const [sessionRes, imagesRes] = await Promise.all([
+    const bootstrap = async () => {
+      const [{ data: { session } }, { data: images }] = await Promise.all([
         supabase.auth.getSession(),
         supabase.from('images').select('*').order('created_at', { ascending: false })
       ])
+      if (session) setSession(session)
+      if (images) setImages(images)
 
-      if (sessionRes.data.session) setSession(sessionRes.data.session)
-      if (imagesRes.data) setImages(imagesRes.data)
-
-      requestAnimationFrame(() => {
-        setTimeout(() => setIsPageReady(true), 300)
-      })
+      requestAnimationFrame(() => setInitLoaded(true))
     }
-
-    init()
-
-    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
-    mql.addEventListener('change', handler)
-    return () => mql.removeEventListener('change', handler)
+    bootstrap()
   }, [setImages, setSession])
+
+  if (!isMounted) return null
 
   return (
     <>
-      <GlobalFlickerFix />
-      <PageWrapper $isVisible={isPageReady}>
+      <GlobalStyle />
+      <Container>
         {!isMobile && <CustomCursor />}
         <Header />
 
-        <BentoGallery isPageReady={isPageReady} />
+        <BentoGallery isVisible={initLoaded} />
 
         {!isMobile && <ScrollShaderOverlay />}
 
         <UploadZone />
         <ImageModal />
         <LoginModal />
-      </PageWrapper>
+      </Container>
     </>
   )
 }
