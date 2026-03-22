@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useRef, useEffect, useState, useMemo, memo } from 'react'
-import styled, { keyframes } from 'styled-components'
+import styled, { keyframes, css } from 'styled-components'
 import { useArchiveStore } from '@/lib/store'
 import { useShallow } from 'zustand/react/shallow'
 import { EmptyState } from './EmptyState'
@@ -59,6 +59,12 @@ const ImageWrapper = styled.div<{ $ratio: number }>`
   &:active { transform: scale(0.97); }
 `
 
+const SkeletonInner = styled.div`
+  width: 100%;
+  height: 100%;
+  animation: ${pulse} 1.5s infinite ease-in-out;
+`;
+
 const StyledImage = styled.img<{ $isLoaded: boolean }>`
   width: 100%;
   height: 100%;
@@ -66,7 +72,7 @@ const StyledImage = styled.img<{ $isLoaded: boolean }>`
   display: block;
   opacity: ${props => props.$isLoaded ? 1 : 0};
   transition: opacity 0.5s ease-in-out;
-  pointer-events: none; 
+  pointer-events: none;
 `
 
 const ImageItem = memo(({ img, onClick }: { img: any, onClick: (id: string) => void }) => {
@@ -86,7 +92,7 @@ const ImageItem = memo(({ img, onClick }: { img: any, onClick: (id: string) => v
     return (
         <ImageWrapper $ratio={ratio} onClick={() => onClick(img.id)}>
             <StyledImage src={img.url} $isLoaded={isLoaded} alt="" />
-            {!isLoaded && <div style={{ width: '100%', height: '100%', animation: `${pulse} 1.5s infinite` }} />}
+            {!isLoaded && <SkeletonInner />}
         </ImageWrapper>
     );
 });

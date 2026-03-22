@@ -8,9 +8,9 @@ import { Header } from './Header'
 import { BentoGallery } from './BentoGallery'
 import { useArchiveStore } from '@/lib/store'
 import { supabase } from '@/lib/supabase'
+import { UploadZone } from './UploadZone'
 import { ImageModal } from './ImageModal'
 import { LoginModal } from './LoginModal'
-import { UploadZone } from './UploadZone'
 
 const ScrollShaderOverlay = dynamic(() => import('./ScrollShaderOverlay'), { ssr: false })
 const CustomCursor = dynamic(() => import('./CustomCursor').then(mod => mod.CustomCursor), { ssr: false })
