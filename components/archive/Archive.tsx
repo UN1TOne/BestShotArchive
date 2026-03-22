@@ -1,78 +1,91 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import styled from 'styled-components'
+import dynamic from 'next/dynamic'
+import styled, { createGlobalStyle } from 'styled-components'
+import { useShallow } from 'zustand/react/shallow'
 import { Header } from './Header'
-import { UploadZone } from './UploadZone'
-import { CustomCursor } from './CustomCursor'
-import { ImageModal } from './ImageModal'
-import { useArchiveStore } from '@/lib/store'
-import { LoginModal } from './LoginModal'
-import { supabase } from '@/lib/supabase'
 import { BentoGallery } from './BentoGallery'
-import ScrollShaderOverlay from './ScrollShaderOverlay'
+import { useArchiveStore } from '@/lib/store'
+import { supabase } from '@/lib/supabase'
 
-const Container = styled.div`
-  position: relative;
+const ScrollShaderOverlay = dynamic(() => import('./ScrollShaderOverlay'), {
+  ssr: false
+})
+
+const CustomCursor = dynamic(() => import('./CustomCursor').then(mod => mod.CustomCursor), {
+  ssr: false
+})
+
+const GlobalFlickerFix = createGlobalStyle`
+  canvas {
+    @media (max-width: 768px) {
+      display: none !important;
+    }
+  }
+`;
+
+const PageWrapper = styled.div<{ $isVisible: boolean }>`
+  opacity: ${props => props.$isVisible ? 1 : 0};
+  transition: opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  background: #0a0a14;
   width: 100%;
   height: 100dvh;
-  background: #0a0a14; 
+  position: relative;
   overflow: hidden;
-  cursor: none;
   contain: strict; 
-
-  @media (max-width: 768px) {
-    cursor: auto;
-  }
-`
+`;
 
 export function Archive() {
-  const [isMounted, setIsMounted] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
+  const { setImages, setSession } = useArchiveStore(
+    useShallow((state) => ({
+      setImages: state.setImages,
+      setSession: state.setSession,
+    }))
+  )
 
-  const setImages = useArchiveStore(state => state.setImages)
-  const setSession = useArchiveStore(state => state.setSession)
+  const [isPageReady, setIsPageReady] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
 
   useEffect(() => {
-    setIsMounted(true)
+    const mql = window.matchMedia('(max-width: 768px)')
+    setIsMobile(mql.matches)
 
-    const bootstrap = async () => {
-      try {
-        const [{ data: { session } }, { data: images }] = await Promise.all([
-          supabase.auth.getSession(),
-          supabase.from('images').select('*').order('created_at', { ascending: false })
-        ])
+    const init = async () => {
+      const [sessionRes, imagesRes] = await Promise.all([
+        supabase.auth.getSession(),
+        supabase.from('images').select('*').order('created_at', { ascending: false })
+      ])
 
-        setSession(session)
-        if (images) setImages(images)
-      } finally {
-        setIsLoading(false)
-      }
+      if (sessionRes.data.session) setSession(sessionRes.data.session)
+      if (imagesRes.data) setImages(imagesRes.data)
+
+      // 하이드레이션 완료 후 브라우저가 안정화될 시간을 줌
+      requestAnimationFrame(() => {
+        setTimeout(() => setIsPageReady(true), 200)
+      })
     }
 
-    bootstrap()
+    init()
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-    })
-
-    return () => subscription.unsubscribe()
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
+    mql.addEventListener('change', handler)
+    return () => mql.removeEventListener('change', handler)
   }, [setImages, setSession])
 
-  if (!isMounted) return null
-
   return (
-    <Container>
-      <CustomCursor />
-      <Header />
+    <>
+      <GlobalFlickerFix />
+      <PageWrapper $isVisible={isPageReady}>
+        {!isMobile && <CustomCursor />}
 
-      <BentoGallery isLoading={isLoading} />
+        <Header />
 
-      <ScrollShaderOverlay />
+        <BentoGallery isLoading={!isPageReady} />
 
-      <UploadZone />
-      <ImageModal />
-      <LoginModal />
-    </Container>
+        {!isMobile && <ScrollShaderOverlay />}
+
+      </PageWrapper>
+    </>
   )
 }
