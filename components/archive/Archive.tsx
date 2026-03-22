@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
-import styled from 'styled-components'
+import { useEffect, useState } from 'react'
+import styled, { createGlobalStyle } from 'styled-components'
 import { useShallow } from 'zustand/react/shallow'
 import { Header } from './Header'
 import { UploadZone } from './UploadZone'
@@ -14,22 +14,28 @@ import { supabase } from '@/lib/supabase'
 import { BentoGallery } from './BentoGallery'
 import ScrollShaderOverlay from './ScrollShaderOverlay'
 
-const Container = styled.div`
-  position: relative;
+// [CSS-First 방어] JS가 실행되기 전에도 모바일에서 Three.js 캔버스를 즉시 숨김
+const GlobalFlickerFix = createGlobalStyle`
+  canvas {
+    @media (max-width: 768px) {
+      display: none !important;
+    }
+  }
+`;
+
+const PageWrapper = styled.div<{ $isVisible: boolean }>`
+  opacity: ${props => props.$isVisible ? 1 : 0};
+  transition: opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  background: #0a0a14;
   width: 100%;
   height: 100dvh;
-  background: #0a0a14; 
+  position: relative;
   overflow: hidden;
-  cursor: none;
-  scrollbar-gutter: stable;
-
-  @media (max-width: 768px) {
-    cursor: auto;
-  }
-`
+  /* 브라우저가 이 안의 레이아웃 변화를 밖으로 전파하지 않게 격리 */
+  contain: layout paint; 
+`;
 
 export function Archive() {
-  // Selector 최적화: 필요한 상태와 액션만 얕은 비교로 가져옴
   const { images, setImages, setSession } = useArchiveStore(
     useShallow((state) => ({
       images: state.images,
@@ -38,76 +44,57 @@ export function Archive() {
     }))
   )
 
+  const [isPageReady, setIsPageReady] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
-  const [isMounted, setIsMounted] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
 
-  // 초기 마운트 및 리사이즈 핸들러
   useEffect(() => {
-    setIsMounted(true)
+    // 1. 초기 마운트 시 환경 설정
     const mql = window.matchMedia('(max-width: 768px)')
     setIsMobile(mql.matches)
+
+    const init = async () => {
+      // 2. Auth & Data 동시 처리
+      const [sessionRes, imagesRes] = await Promise.all([
+        supabase.auth.getSession(),
+        supabase.from('images').select('*').order('created_at', { ascending: false })
+      ])
+
+      if (sessionRes.data.session) setSession(sessionRes.data.session)
+      if (imagesRes.data) setImages(imagesRes.data)
+
+      // 3. 브라우저가 레이아웃을 완전히 잡을 시간을 준 뒤 커튼을 걷음
+      requestAnimationFrame(() => {
+        setTimeout(() => setIsPageReady(true), 150)
+      })
+    }
+
+    init()
 
     const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
     mql.addEventListener('change', handler)
     return () => mql.removeEventListener('change', handler)
-  }, [])
-
-  // Auth 로직 분리
-  useEffect(() => {
-    if (!isMounted) return
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-    })
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-    })
-
-    return () => subscription.unsubscribe()
-  }, [isMounted, setSession])
-
-  // 데이터 페칭 로직
-  useEffect(() => {
-    if (!isMounted) return
-
-    const fetchImages = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('images')
-          .select('*')
-          .order('created_at', { ascending: false })
-
-        if (data && !error) setImages(data)
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    fetchImages()
-  }, [isMounted, setImages])
-
-  if (!isMounted) return <Container style={{ background: '#0a0a14' }} />
+  }, [setImages, setSession])
 
   return (
-    <Container>
-      <CustomCursor />
-      <Header />
+    <>
+      <GlobalFlickerFix />
+      <PageWrapper $isVisible={isPageReady}>
+        <CustomCursor />
+        <Header />
 
-      {/* 데이터가 로드 중이거나 이미지가 존재할 때 갤러리 유지 */}
-      {(isLoading || images.length > 0) ? (
-        <BentoGallery isLoading={isLoading} />
-      ) : (
-        <EmptyState />
-      )}
+        {/* 모바일에서는 Three.js 자체를 인스턴스화하지 않음 */}
+        {!isMobile && <ScrollShaderOverlay />}
 
-      {/* 모바일이 아닐 때만 쉐이더 실행 (CSS 가시성 병행 권장) */}
-      {!isMobile && <ScrollShaderOverlay />}
+        {images.length > 0 ? (
+          <BentoGallery isPageReady={isPageReady} />
+        ) : (
+          isPageReady && <EmptyState />
+        )}
 
-      <UploadZone />
-      <ImageModal />
-      <LoginModal />
-    </Container>
+        <UploadZone />
+        <ImageModal />
+        <LoginModal />
+      </PageWrapper>
+    </>
   )
 }
