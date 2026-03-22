@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
-import { Scene } from './Scene'
 import { Header } from './Header'
 import { UploadZone } from './UploadZone'
 import { CustomCursor } from './CustomCursor'
@@ -28,39 +27,17 @@ const Container = styled.div`
 `
 
 export function Archive() {
-  // const scrollContainerRef = useRef<HTMLDivElement>(null)
   const { images, setImages, setSession } = useArchiveStore()
-  const [isMobile, setIsMobile] = useState(false);
-  const [isMounted, setIsMounted] = useState(false);
-
-  useEffect(() => {
-    setIsMounted(true);
-
-    const mql = window.matchMedia('(max-width: 768px)');
-
-    setIsMobile(mql.matches);
-
-    const onChange = (e: MediaQueryListEvent) => {
-      setIsMobile(e.matches);
-    };
-
-    mql.addEventListener('change', onChange);
-    return () => mql.removeEventListener('change', onChange);
-  }, []);
-
-  if (!isMounted) {
-    return <Container style={{ background: '#0a0a14' }} />;
-  }
+  const [isMobile, setIsMobile] = useState(false)
+  const [isMounted, setIsMounted] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
     })
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
     })
-
     return () => subscription.unsubscribe()
   }, [setSession])
 
@@ -70,21 +47,33 @@ export function Archive() {
         .from('images')
         .select('*')
         .order('created_at', { ascending: false });
-
-      if (data && !error) {
-        setImages(data);
-      }
+      if (data && !error) setImages(data);
     };
     fetchImages();
   }, [setImages]);
+
+  useEffect(() => {
+    setIsMounted(true)
+    const mql = window.matchMedia('(max-width: 768px)')
+    setIsMobile(mql.matches)
+
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
+    mql.addEventListener('change', handler)
+    return () => mql.removeEventListener('change', handler)
+  }, [])
+
+  if (!isMounted) {
+    return <Container style={{ background: '#0a0a14' }} />;
+  }
 
   return (
     <Container>
       <CustomCursor />
       <Header />
-      {/* <Scene scrollContainer={scrollContainerRef} /> */}
       <BentoGallery />
+
       {!isMobile && <ScrollShaderOverlay />}
+
       {images.length === 0 && <EmptyState />}
       <UploadZone />
       <ImageModal />
