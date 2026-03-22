@@ -14,18 +14,13 @@ import { BentoGallery } from './BentoGallery'
 import ScrollShaderOverlay from './ScrollShaderOverlay'
 
 const Container = styled.div`
+  scrollbar-gutter: stable; 
   position: relative;
   width: 100%;
   height: 100dvh;
   background: #0a0a14;
-  overflow-x: hidden;
   overflow-y: auto;
-  cursor: none;
-
-  @media (max-width: 768px) {
-    cursor: auto;
-  }
-`
+`;
 
 export function Archive() {
   const { images, setImages, setSession } = useArchiveStore()

@@ -5,10 +5,10 @@ import styled, { keyframes } from 'styled-components'
 import { useArchiveStore } from '@/lib/store'
 
 const pulse = keyframes`
-  0% { background-color: rgba(255, 255, 255, 0.05); }
-  50% { background-color: rgba(255, 255, 255, 0.1); }
-  100% { background-color: rgba(255, 255, 255, 0.05); }
-`
+  0% { background-color: rgba(255, 255, 255, 0.03); }
+  50% { background-color: rgba(255, 255, 255, 0.08); }
+  100% { background-color: rgba(255, 255, 255, 0.03); }
+`;
 
 const ScrollContainer = styled.div`
   position: absolute;
@@ -38,26 +38,19 @@ const GridContainer = styled.div`
   }
 `
 
-const ImageWrapper = styled.div`
+const ImageWrapper = styled.div<{ $ratio?: number }>`
   break-inside: avoid;
   margin-bottom: 1rem;
   border-radius: 12px;
   overflow: hidden;
-  cursor: pointer;
-  background: rgba(255, 255, 255, 0.05); /* 로딩 전 배경색 */
+  background: #1a1a2e; /* 이미지 로드 전 어두운 배경 유지 */
   
-  transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1), box-shadow 0.3s ease;
-  
-  &:hover {
-    transform: scale(1.02) translateY(-4px);
-    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
-  }
+  /* 핵심: 레이아웃 시프트 방지 */
+  aspect-ratio: ${props => props.$ratio || '3 / 4'}; 
+  contain: paint; /* 브라우저가 개별 요소의 변화를 독립적으로 계산하게 함 */
 
-  @media (max-width: 768px) { 
-    margin-bottom: 0.5rem; 
-    &:hover { transform: none; }
-  }
-`
+  @media (max-width: 768px) { margin-bottom: 0.5rem; }
+`;
 
 const SkeletonBox = styled.div<{ height: string }>`
   width: 100%;
@@ -70,14 +63,13 @@ const DummyImage = styled.img`
   height: 100%;
   object-fit: cover;
   display: block;
-  /* 이미지가 로드될 때 부드럽게 나타나도록 애니메이션 추가 */
-  animation: fadeIn 0.5s ease-in-out;
+  opacity: 0;
+  transition: opacity 0.3s ease-in-out;
 
-  @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
+  &.loaded {
+    opacity: 1;
   }
-`
+`;
 
 interface BentoGalleryProps {
     isLoading: boolean;
@@ -110,30 +102,41 @@ export function BentoGallery({ isLoading }: BentoGalleryProps) {
         }
     }, [images, isLoading])
 
+    const SkeletonBox = styled.div<{ $height: string }>`
+      width: 100%;
+      height: ${props => props.$height};
+      background-color: rgba(255, 255, 255, 0.05);
+      animation: ${pulse} 1.5s infinite ease-in-out;
+      border-radius: 12px;
+    `;
+
     return (
         <ScrollContainer ref={scrollRef} onScroll={handleScroll}>
-            {/* 1. 로딩 중일 때 스켈레톤 그리드 표시 */}
             {isLoading ? (
                 <GridContainer>
-                    {[250, 320, 180, 400, 300, 220, 350, 280, 200].map((h, i) => (
+                    {/* 실제 데이터가 오기 전, 임의의 높이들로 그리드를 미리 채워둠 */}
+                    {[300, 450, 200, 350, 400, 250].map((h, i) => (
                         <ImageWrapper key={`skeleton-${i}`}>
-                            <SkeletonBox height={`${h}px`} />
+                            <SkeletonBox $height={`${h}px`} />
                         </ImageWrapper>
                     ))}
                 </GridContainer>
             ) : (
-                /* 2. 로딩 완료 후 실제 이미지 그리드 (3세트 무한루프) */
                 Array.from({ length: 3 }).map((_, setIndex) => (
                     <GridContainer key={setIndex}>
                         {images.map((img) => (
                             <ImageWrapper
                                 key={`${setIndex}-${img.id}`}
                                 onClick={() => setSelectedImage(img.id)}
+                            // 핵심: 이미지 비율이 있다면 여기서 aspect-ratio를 강제하세요.
+                            // 스타일 컴포넌트에 $ratio props를 넘겨 처리하면 더 완벽합니다.
                             >
                                 <DummyImage
                                     src={img.url}
-                                    alt={img.title || 'Archive Image'}
+                                    alt={img.title}
                                     loading="lazy"
+                                    onLoad={(e) => (e.currentTarget.style.opacity = '1')}
+                                    style={{ opacity: 0, transition: 'opacity 0.3s ease' }}
                                 />
                             </ImageWrapper>
                         ))}
@@ -141,5 +144,5 @@ export function BentoGallery({ isLoading }: BentoGalleryProps) {
                 ))
             )}
         </ScrollContainer>
-    )
+    );
 }
