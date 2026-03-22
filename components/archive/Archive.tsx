@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
 import { Scene } from './Scene'
 import { Header } from './Header'
@@ -28,8 +28,23 @@ const Container = styled.div`
 `
 
 export function Archive() {
-  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  // const scrollContainerRef = useRef<HTMLDivElement>(null)
   const { images, setImages, setSession } = useArchiveStore()
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const mql = window.matchMedia('(max-width: 768px)');
+
+    setIsMobile(mql.matches);
+
+    const onChange = (e: MediaQueryListEvent) => {
+      setIsMobile(e.matches);
+    };
+
+    mql.addEventListener('change', onChange);
+
+    return () => mql.removeEventListener('change', onChange);
+  }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -63,7 +78,7 @@ export function Archive() {
       <Header />
       {/* <Scene scrollContainer={scrollContainerRef} /> */}
       <BentoGallery />
-      <ScrollShaderOverlay />
+      {!isMobile && <ScrollShaderOverlay />}
       {images.length === 0 && <EmptyState />}
       <UploadZone />
       <ImageModal />
