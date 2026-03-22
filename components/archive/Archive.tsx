@@ -16,8 +16,8 @@ import ScrollShaderOverlay from './ScrollShaderOverlay'
 const Container = styled.div`
   position: relative;
   width: 100%;
-  height: 100vh;
-  background: #0a0a14; 
+  height: 100dvh;
+  background: #0a0a14;
   overflow: hidden;
   cursor: none;
 
@@ -30,6 +30,16 @@ export function Archive() {
   const { images, setImages, setSession } = useArchiveStore()
   const [isMobile, setIsMobile] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
+
+  useEffect(() => {
+    setIsMounted(true)
+    const mql = window.matchMedia('(max-width: 768px)')
+    setIsMobile(mql.matches)
+
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
+    mql.addEventListener('change', handler)
+    return () => mql.removeEventListener('change', handler)
+  }, [])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -46,24 +56,14 @@ export function Archive() {
       const { data, error } = await supabase
         .from('images')
         .select('*')
-        .order('created_at', { ascending: false });
-      if (data && !error) setImages(data);
-    };
-    fetchImages();
-  }, [setImages]);
-
-  useEffect(() => {
-    setIsMounted(true)
-    const mql = window.matchMedia('(max-width: 768px)')
-    setIsMobile(mql.matches)
-
-    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
-    mql.addEventListener('change', handler)
-    return () => mql.removeEventListener('change', handler)
-  }, [])
+        .order('created_at', { ascending: false })
+      if (data && !error) setImages(data)
+    }
+    fetchImages()
+  }, [setImages])
 
   if (!isMounted) {
-    return <Container style={{ background: '#0a0a14' }} />;
+    return <Container style={{ background: '#0a0a14' }} />
   }
 
   return (
