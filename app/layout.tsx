@@ -11,6 +11,9 @@ const _geistMono = Geist_Mono({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: 'UNIT의 인생샷',
   description: 'UNIT의 인생샷',
+  icons: {
+    icon: '/favicon.ico',
+  },
 }
 
 export default function RootLayout({
@@ -25,10 +28,6 @@ export default function RootLayout({
           {children}
         </StyledComponentsRegistry>
         <Analytics />
-        {/* <Script src="https://unpkg.com/vconsole@latest/dist/vconsole.min.js" strategy="beforeInteractive" />
-        <Script id="vconsole-init" strategy="afterInteractive">
-          {`if (typeof window !== 'undefined') { new window.VConsole(); }`}
-        </Script> */}
       </body>
     </html>
   )
