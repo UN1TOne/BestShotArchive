@@ -6,7 +6,7 @@ import { useArchiveStore } from '@/lib/store'
 import { LogIn, LogOut, Menu as MenuIcon, X, Image as ImageIcon, LayoutGrid, Layers } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
-const HeaderContainer = styled.header`
+const HeaderContainer = styled.header<{ $isHidden: boolean }>`
   position: fixed;
   top: 0;
   left: 0;
@@ -23,6 +23,8 @@ const HeaderContainer = styled.header`
   );
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+  transform: ${(props) => (props.$isHidden ? 'translateY(-100%)' : 'translateY(0)')};
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 
   @media (max-width: 768px) {
     padding: 1rem 1.5rem;
@@ -35,7 +37,7 @@ const Logo = styled.div`
   gap: 0.75rem;
   cursor: pointer;
   z-index: 1100;
-  white-space: nowrap; /* 로고 글자 줄바꿈 방지 */
+  white-space: nowrap;
 `
 
 const LogoIcon = styled.div`
@@ -57,14 +59,13 @@ const LogoText = styled.span`
   color: white;
 `
 
-/* [수정] 데스크탑 네비게이션: 모바일(768px) 이하에서 !important로 확실히 제거 */
 const DesktopNav = styled.nav`
   display: flex;
   align-items: center;
   gap: 1.5rem;
 
   @media (max-width: 768px) {
-    display: none !important; 
+    display: none !important;
   }
 `
 
@@ -116,7 +117,6 @@ const AuthButton = styled.button<{ $isMobile?: boolean }>`
   cursor: pointer;
 `
 
-/* [수정] 햄버거 버튼: 데스크탑(769px) 이상에서는 확실히 제거 */
 const HamburgerButton = styled.button`
   display: none;
   background: none;
@@ -141,17 +141,14 @@ const MobileOverlay = styled.div<{ $isOpen: boolean }>`
     top: 0;
     left: 0;
     width: 100vw;
-    
     height: 100vh;
-    height: 100dvh; 
-    overflow-y: auto; 
-    
+    height: 100dvh;
+    overflow-y: auto;
     background: rgba(10, 10, 20, 0.98);
     z-index: 1050;
     flex-direction: column;
-    padding: 7rem 2rem 3rem; 
+    padding: 7rem 2rem 3rem;
     gap: 2.5rem;
-    
     opacity: ${({ $isOpen }) => ($isOpen ? 1 : 0)};
     visibility: ${({ $isOpen }) => ($isOpen ? 'visible' : 'hidden')};
     transform: ${({ $isOpen }) => ($isOpen ? 'translateY(0)' : 'translateY(-20px)')};
@@ -178,14 +175,13 @@ const MobileMenuItem = styled.div`
 
 export function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
-  const { images, session, setLoginModalOpen, setSession } = useArchiveStore()
+  const { images, session, setLoginModalOpen, setSession, selectedImage } = useArchiveStore()
 
   useEffect(() => {
     if (isMenuOpen) document.body.style.overflow = 'hidden'
     else document.body.style.overflow = 'unset'
   }, [isMenuOpen])
 
-  // 화면 크기가 커지면 메뉴 닫기
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth > 768) setIsMenuOpen(false)
@@ -201,7 +197,7 @@ export function Header() {
   }
 
   return (
-    <HeaderContainer>
+    <HeaderContainer $isHidden={!!selectedImage}>
       <Logo onClick={() => window.location.reload()}>
         <LogoIcon>📷</LogoIcon>
         <LogoText>UNIT의 인생샷</LogoText>

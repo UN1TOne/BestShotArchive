@@ -11,9 +11,6 @@ const _geistMono = Geist_Mono({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: 'UNIT의 인생샷',
   description: 'UNIT의 인생샷',
-  icons: {
-    icon: '/favicon.ico',
-  },
 }
 
 export default function RootLayout({
