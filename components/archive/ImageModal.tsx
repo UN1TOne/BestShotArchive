@@ -34,18 +34,28 @@ const ModalContent = styled.div`
   gap: 1.5rem;
 `
 
-const ImageContainer = styled.div`
+const ImageContainer = styled.div<{ $aspectRatio: number }>`
   position: relative;
   border-radius: 16px;
   overflow: hidden;
   box-shadow: 0 40px 100px rgba(0, 0, 0, 0.5);
-`
-
-const ModalImage = styled.img`
+  aspect-ratio: ${(props) => props.$aspectRatio};
   max-width: 80vw;
   max-height: 70vh;
+  width: 100%;
+  background: #1a1a2e;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+`
+
+const ModalImage = styled.img<{ $loaded: boolean }>`
+  width: 100%;
+  height: 100%;
   object-fit: contain;
   display: block;
+  opacity: ${(props) => (props.$loaded ? 1 : 0)};
+  transition: opacity 0.3s ease-in-out;
 `
 
 const ImageInfo = styled.div`
@@ -127,13 +137,14 @@ const CloseButton = styled.button`
 export function ImageModal() {
   const { selectedImage, images, setSelectedImage, removeImage, session } = useArchiveStore()
   const [isDeleting, setIsDeleting] = useState(false)
-
+  const [isImageLoaded, setIsImageLoaded] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
 
   const image = images.find((img) => img.id === selectedImage)
 
   useEffect(() => {
     if (selectedImage && contentRef.current) {
+      setIsImageLoaded(false)
       gsap.fromTo(
         contentRef.current,
         { scale: 0.9, opacity: 0, y: 50 },
@@ -148,45 +159,28 @@ export function ImageModal() {
         setSelectedImage(null)
       }
     }
-
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [setSelectedImage, isDeleting])
 
   const handleDelete = async () => {
     if (!image || !session) return
-
     if (!window.confirm('정말 이 이미지를 아카이브에서 삭제하시겠습니까?')) return
 
     setIsDeleting(true)
-
     try {
-      // 1. Supabase Database에서 레코드 삭제
-      const { error: dbError } = await supabase
-        .from('images')
-        .delete()
-        .eq('id', image.id)
-
+      const { error: dbError } = await supabase.from('images').delete().eq('id', image.id)
       if (dbError) throw dbError
 
-      // 2. Supabase Storage에서 원본 파일 삭제
       const fileName = image.url.split('/').pop()
       if (fileName) {
-        const { error: storageError } = await supabase.storage
-          .from('archive-images')
-          .remove([`public/${fileName}`])
-
-        if (storageError) {
-          console.error('Storage 파일 삭제 실패:', storageError)
-        }
+        await supabase.storage.from('archive-images').remove([`public/${fileName}`])
       }
 
-      // 3. Zustand 스토어 업데이트 및 모달 닫기
       removeImage(image.id)
       setSelectedImage(null)
-
     } catch (error) {
-      console.error('삭제 중 오류 발생:', error)
+      console.error(error)
       alert('삭제에 실패했습니다.')
     } finally {
       setIsDeleting(false)
@@ -195,6 +189,8 @@ export function ImageModal() {
 
   if (!image) return null
 
+  const aspectRatio = image.width && image.height ? image.width / image.height : 1
+
   return (
     <Overlay $isOpen={!!selectedImage} onClick={() => !isDeleting && setSelectedImage(null)}>
       <CloseButton onClick={() => !isDeleting && setSelectedImage(null)}>
@@ -202,8 +198,14 @@ export function ImageModal() {
       </CloseButton>
 
       <ModalContent ref={contentRef} onClick={(e) => e.stopPropagation()}>
-        <ImageContainer>
-          <ModalImage src={image.url} alt={image.title || 'Image'} style={{ opacity: isDeleting ? 0.5 : 1 }} />
+        <ImageContainer $aspectRatio={aspectRatio}>
+          <ModalImage
+            src={image.url}
+            alt={image.title || 'Image'}
+            $loaded={isImageLoaded}
+            onLoad={() => setIsImageLoaded(true)}
+            style={{ opacity: isDeleting ? 0.5 : (isImageLoaded ? 1 : 0) }}
+          />
         </ImageContainer>
 
         <ImageInfo>
@@ -214,7 +216,6 @@ export function ImageModal() {
         </ImageInfo>
 
         <Actions>
-          {/* 세션(로그인)이 있을 때만 삭제 버튼 노출 */}
           {session && (
             <ActionButton $variant="danger" onClick={handleDelete} disabled={isDeleting}>
               {isDeleting ? <Loader2 size={18} className="animate-spin" /> : <Trash2 size={18} />}

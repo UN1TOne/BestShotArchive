@@ -1,4 +1,3 @@
-// BentoGallery.tsx
 'use client'
 
 import React, { useRef, useEffect, useState, useMemo, memo } from 'react'
@@ -11,7 +10,7 @@ const pulse = keyframes`
   0% { background: rgba(255, 255, 255, 0.03); }
   50% { background: rgba(255, 255, 255, 0.08); }
   100% { background: rgba(255, 255, 255, 0.03); }
-`;
+`
 
 const ScrollContainer = styled.div<{ $ready: boolean }>`
   position: absolute;
@@ -54,13 +53,21 @@ const ImageWrapper = styled.div<{ $ratio: number }>`
   transform: translateZ(0);
 `
 
-const SkeletonInner = styled.div`
+const SkeletonInner = styled.div<{ $loaded: boolean }>`
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
+  background: #1a1a2e;
   animation: ${pulse} 1.5s infinite ease-in-out;
+  opacity: ${props => props.$loaded ? 0 : 1};
+  transition: opacity 0.3s ease-in-out;
+  pointer-events: none;
 `
 
 const StyledImage = styled.img<{ $loaded: boolean }>`
+  position: relative;
+  z-index: 1;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -69,48 +76,55 @@ const StyledImage = styled.img<{ $loaded: boolean }>`
 `
 
 const ImageItem = memo(({ img, onClick }: { img: any, onClick: (id: string) => void }) => {
-    const [isLoaded, setIsLoaded] = useState(false);
-    const ratio = useMemo(() => img.width / img.height || 0.75, [img.width, img.height]);
+    const [isLoaded, setIsLoaded] = useState(false)
+    const ratio = useMemo(() => img.width / img.height || 0.75, [img.width, img.height])
 
     return (
         <ImageWrapper $ratio={ratio} onClick={() => onClick(img.id)}>
+            <SkeletonInner $loaded={isLoaded} />
             <StyledImage
                 src={img.url}
                 $loaded={isLoaded}
                 onLoad={() => setIsLoaded(true)}
                 decoding="async"
             />
-            {!isLoaded && <SkeletonInner />}
         </ImageWrapper>
-    );
-});
+    )
+})
 
 export function BentoGallery() {
     const scrollRef = useRef<HTMLDivElement>(null)
     const [isReady, setIsReady] = useState(false)
+    const [colCount, setColCount] = useState(3)
     const { images, setSelectedImage } = useArchiveStore(useShallow(state => ({
         images: state.images,
         setSelectedImage: state.setSelectedImage
     })))
 
+    useEffect(() => {
+        const handleResize = () => setColCount(window.innerWidth <= 768 ? 2 : 3)
+        handleResize()
+        window.addEventListener('resize', handleResize)
+        return () => window.removeEventListener('resize', handleResize)
+    }, [])
+
     const columns = useMemo(() => {
-        const colCount = typeof window !== 'undefined' && window.innerWidth <= 768 ? 2 : 3;
-        const result: any[][] = Array.from({ length: colCount }, () => []);
+        const result: any[][] = Array.from({ length: colCount }, () => [])
         if (images.length > 0) {
-            const tripled = [...images, ...images, ...images];
-            tripled.forEach((img, i) => result[i % colCount].push(img));
+            const tripled = [...images, ...images, ...images]
+            tripled.forEach((img, i) => result[i % colCount].push(img))
         }
-        return result;
-    }, [images]);
+        return result
+    }, [images, colCount])
 
     useEffect(() => {
         if (scrollRef.current && images.length > 0) {
-            const el = scrollRef.current;
-            el.scrollTop = el.scrollHeight / 3;
-            const timeout = setTimeout(() => setIsReady(true), 50);
-            return () => clearTimeout(timeout);
+            const el = scrollRef.current
+            el.scrollTop = el.scrollHeight / 3
+            const timeout = setTimeout(() => setIsReady(true), 50)
+            return () => clearTimeout(timeout)
         }
-    }, [images.length]);
+    }, [images.length])
 
     const handleScroll = () => {
         if (!scrollRef.current || !isReady) return

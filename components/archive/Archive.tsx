@@ -1,4 +1,3 @@
-// Archive.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -26,7 +25,7 @@ const GlobalStyle = createGlobalStyle`
     margin: 0;
     padding: 0;
   }
-`;
+`
 
 const Container = styled.div`
   position: relative;
@@ -34,7 +33,7 @@ const Container = styled.div`
   height: 100dvh;
   background: #0a0a14;
   overflow: hidden;
-`;
+`
 
 export function Archive() {
   const { setImages, setSession } = useArchiveStore(useShallow(state => ({
@@ -47,8 +46,9 @@ export function Archive() {
 
   useEffect(() => {
     setIsMounted(true)
-    const mql = window.matchMedia('(max-width: 768px)')
-    setIsMobile(mql.matches)
+    const handleResize = () => setIsMobile(window.matchMedia('(max-width: 768px)').matches)
+    handleResize()
+    window.addEventListener('resize', handleResize)
 
     const bootstrap = async () => {
       const [sessionRes, imagesRes] = await Promise.all([
@@ -59,9 +59,17 @@ export function Archive() {
       if (imagesRes.data) setImages(imagesRes.data)
     }
     bootstrap()
+
+    return () => window.removeEventListener('resize', handleResize)
   }, [setImages, setSession])
 
-  if (!isMounted) return null
+  if (!isMounted) {
+    return (
+      <Container>
+        <GlobalStyle />
+      </Container>
+    )
+  }
 
   return (
     <>
