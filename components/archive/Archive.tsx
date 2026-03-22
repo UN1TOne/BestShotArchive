@@ -1,3 +1,4 @@
+// Archive.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -21,7 +22,9 @@ const GlobalStyle = createGlobalStyle`
   }
   body {
     background: #0a0a14;
-    overscroll-behavior: none; 
+    overscroll-behavior: none;
+    margin: 0;
+    padding: 0;
   }
 `;
 
@@ -31,7 +34,6 @@ const Container = styled.div`
   height: 100dvh;
   background: #0a0a14;
   overflow: hidden;
-  contain: layout paint; 
 `;
 
 export function Archive() {
@@ -42,7 +44,6 @@ export function Archive() {
 
   const [isMounted, setIsMounted] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
-  const [initLoaded, setInitLoaded] = useState(false)
 
   useEffect(() => {
     setIsMounted(true)
@@ -50,14 +51,12 @@ export function Archive() {
     setIsMobile(mql.matches)
 
     const bootstrap = async () => {
-      const [{ data: { session } }, { data: images }] = await Promise.all([
+      const [sessionRes, imagesRes] = await Promise.all([
         supabase.auth.getSession(),
         supabase.from('images').select('*').order('created_at', { ascending: false })
       ])
-      if (session) setSession(session)
-      if (images) setImages(images)
-
-      requestAnimationFrame(() => setInitLoaded(true))
+      if (sessionRes.data.session) setSession(sessionRes.data.session)
+      if (imagesRes.data) setImages(imagesRes.data)
     }
     bootstrap()
   }, [setImages, setSession])
@@ -70,11 +69,8 @@ export function Archive() {
       <Container>
         {!isMobile && <CustomCursor />}
         <Header />
-
-        <BentoGallery isVisible={initLoaded} />
-
+        <BentoGallery />
         {!isMobile && <ScrollShaderOverlay />}
-
         <UploadZone />
         <ImageModal />
         <LoginModal />
