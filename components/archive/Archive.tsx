@@ -73,15 +73,10 @@ export function Archive() {
     <Container>
       <CustomCursor />
       <Header />
+      <BentoGallery isLoading={isLoading} />
 
-      {(isLoading || images.length > 0) ? (
-        <BentoGallery isLoading={isLoading} />
-      ) : (
-        <EmptyState />
-      )}
-
-      {!isMobile && <ScrollShaderOverlay />}
-
+      <ScrollShaderOverlay />
+      {images.length === 0 && !isLoading && <EmptyState />}
       <UploadZone />
       <ImageModal />
       <LoginModal />

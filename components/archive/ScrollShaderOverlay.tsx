@@ -1,5 +1,14 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
+import styled from 'styled-components'
+
+const Container = styled.div`
+  --display-shader: block;
+
+  @media (max-width: 768px) {
+    --display-shader: none;
+  }
+`;
 
 const ScrollShaderOverlay: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -136,13 +145,11 @@ const ScrollShaderOverlay: React.FC = () => {
             ref={canvasRef}
             style={{
                 position: 'fixed',
-                top: 0,
-                left: 0,
-                width: '100vw',
-                height: '100vh',
+                inset: 0,
                 pointerEvents: 'none',
                 zIndex: 9999,
                 mixBlendMode: 'overlay',
+                display: 'var(--display-shader, block)'
             }}
         />
     );
