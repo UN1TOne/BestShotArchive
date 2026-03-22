@@ -1,12 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import styled, { createGlobalStyle } from 'styled-components'
-import { useShallow } from 'zustand/react/shallow'
+import styled from 'styled-components'
 import { Header } from './Header'
 import { UploadZone } from './UploadZone'
 import { CustomCursor } from './CustomCursor'
-import { EmptyState } from './EmptyState'
 import { ImageModal } from './ImageModal'
 import { useArchiveStore } from '@/lib/store'
 import { LoginModal } from './LoginModal'
@@ -14,87 +12,67 @@ import { supabase } from '@/lib/supabase'
 import { BentoGallery } from './BentoGallery'
 import ScrollShaderOverlay from './ScrollShaderOverlay'
 
-// [CSS-First 방어] JS가 실행되기 전에도 모바일에서 Three.js 캔버스를 즉시 숨김
-const GlobalFlickerFix = createGlobalStyle`
-  canvas {
-    @media (max-width: 768px) {
-      display: none !important;
-    }
-  }
-`;
-
-const PageWrapper = styled.div<{ $isVisible: boolean }>`
-  opacity: ${props => props.$isVisible ? 1 : 0};
-  transition: opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-  background: #0a0a14;
+const Container = styled.div`
+  position: relative;
   width: 100%;
   height: 100dvh;
-  position: relative;
+  background: #0a0a14; 
   overflow: hidden;
-  /* 브라우저가 이 안의 레이아웃 변화를 밖으로 전파하지 않게 격리 */
-  contain: layout paint; 
-`;
+  cursor: none;
+  contain: strict; 
+
+  @media (max-width: 768px) {
+    cursor: auto;
+  }
+`
 
 export function Archive() {
-  const { images, setImages, setSession } = useArchiveStore(
-    useShallow((state) => ({
-      images: state.images,
-      setImages: state.setImages,
-      setSession: state.setSession,
-    }))
-  )
+  const [isMounted, setIsMounted] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
 
-  const [isPageReady, setIsPageReady] = useState(false)
-  const [isMobile, setIsMobile] = useState(false)
+  const setImages = useArchiveStore(state => state.setImages)
+  const setSession = useArchiveStore(state => state.setSession)
 
   useEffect(() => {
-    // 1. 초기 마운트 시 환경 설정
-    const mql = window.matchMedia('(max-width: 768px)')
-    setIsMobile(mql.matches)
+    setIsMounted(true)
 
-    const init = async () => {
-      // 2. Auth & Data 동시 처리
-      const [sessionRes, imagesRes] = await Promise.all([
-        supabase.auth.getSession(),
-        supabase.from('images').select('*').order('created_at', { ascending: false })
-      ])
+    const bootstrap = async () => {
+      try {
+        const [{ data: { session } }, { data: images }] = await Promise.all([
+          supabase.auth.getSession(),
+          supabase.from('images').select('*').order('created_at', { ascending: false })
+        ])
 
-      if (sessionRes.data.session) setSession(sessionRes.data.session)
-      if (imagesRes.data) setImages(imagesRes.data)
-
-      // 3. 브라우저가 레이아웃을 완전히 잡을 시간을 준 뒤 커튼을 걷음
-      requestAnimationFrame(() => {
-        setTimeout(() => setIsPageReady(true), 150)
-      })
+        setSession(session)
+        if (images) setImages(images)
+      } finally {
+        setIsLoading(false)
+      }
     }
 
-    init()
+    bootstrap()
 
-    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
-    mql.addEventListener('change', handler)
-    return () => mql.removeEventListener('change', handler)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+    })
+
+    return () => subscription.unsubscribe()
   }, [setImages, setSession])
 
+  if (!isMounted) return null
+
   return (
-    <>
-      <GlobalFlickerFix />
-      <PageWrapper $isVisible={isPageReady}>
-        <CustomCursor />
-        <Header />
+    <Container>
+      <CustomCursor />
+      <Header />
 
-        {/* 모바일에서는 Three.js 자체를 인스턴스화하지 않음 */}
-        {!isMobile && <ScrollShaderOverlay />}
+      <BentoGallery isLoading={isLoading} />
 
-        {images.length > 0 ? (
-          <BentoGallery isPageReady={isPageReady} />
-        ) : (
-          isPageReady && <EmptyState />
-        )}
+      <ScrollShaderOverlay />
 
-        <UploadZone />
-        <ImageModal />
-        <LoginModal />
-      </PageWrapper>
-    </>
+      <UploadZone />
+      <ImageModal />
+      <LoginModal />
+    </Container>
   )
 }
